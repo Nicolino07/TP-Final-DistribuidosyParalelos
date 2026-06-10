@@ -1,6 +1,6 @@
 package servidor;
 
-import com.tp.distribuidos.servidor.modelo.GrafoTrabajadores;
+import servidor.modelo.GrafoTrabajadores;
 
 import java.io.*;
 

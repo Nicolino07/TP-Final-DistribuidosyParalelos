@@ -25,14 +25,14 @@ public class NodoTrabajador implements Serializable {
     // Múltiples lecturas simultáneas permitidas.
     // Una escritura excluye a todos los demás.
     // -------------------------------------------------------
-    private final transient ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    private transient ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
 
     // -------------------------------------------------------
     // Mecanismo 2: Monitor para el hilo de expiración
     // El hilo de expiración espera sobre este monitor.
     // Cuando se crea un contrato nuevo se notifica al hilo.
     // -------------------------------------------------------
-    private final transient Object monitor = new Object();
+    private transient Object monitor = new Object();
 
     // -------------------------------------------------------
     // Mecanismo 3: Semáforo por contrato
@@ -214,6 +214,16 @@ public class NodoTrabajador implements Serializable {
     @Override
     public String toString() {
         return trabajador.toString() + " | Promedio: " + String.format("%.1f", promedio) + " | " + estado.getEtiqueta();
+    }
+
+    // -------------------------------------------------------
+    // Restaura los campos transient al deserializar desde disco
+    // -------------------------------------------------------
+    private void readObject(java.io.ObjectInputStream in) throws java.io.IOException, ClassNotFoundException {
+        in.defaultReadObject();
+        lock    = new ReentrantReadWriteLock();
+        monitor = new Object();
+        // semafороCalificacion se recrea al contratar; queda null hasta entonces
     }
 
     // -------------------------------------------------------

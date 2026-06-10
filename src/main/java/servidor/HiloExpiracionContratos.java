@@ -1,7 +1,7 @@
-package com.tp.distribuidos.servidor;
+package servidor;
 
-import com.tp.distribuidos.servidor.modelo.GrafoTrabajadores;
-import com.tp.distribuidos.servidor.modelo.NodoTrabajador;
+import servidor.modelo.GrafoTrabajadores;
+import servidor.modelo.NodoTrabajador;
 
 import java.util.List;
 

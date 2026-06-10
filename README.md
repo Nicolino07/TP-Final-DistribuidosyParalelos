@@ -156,11 +156,11 @@ mvn package
 ## Ejecutar
 
 ```bash
-# Proceso 1 — aplicación principal
-java -jar servidor/target/servidor-1.0-SNAPSHOT.jar
+# Proceso 1 — aplicación principal (abre la GUI)
+java -jar target/servidor.jar
 
-# Proceso 2 — stress client (en otra terminal)
-java -jar stress-client/target/stress-client-1.0-SNAPSHOT.jar
+# Proceso 2 — stress client (en otra terminal, con el servidor corriendo)
+java -jar target/stress-client.jar
 ```
 
 ---
@@ -179,9 +179,9 @@ Al cerrar la aplicación el grafo se serializa automáticamente a `grafo.dat`. A
 - [x] `HiloExpiracionContratos`
 - [x] `PersistenciaGrafo`
 - [x] `ProtocoloParser`
-- [ ] `ManejadorCliente`
-- [ ] `ServidorTCP`
-- [ ] `Main` servidor
-- [ ] Interfaz gráfica (Swing)
-- [ ] Stress client
+- [x] `ManejadorCliente`
+- [x] `ServidorTCP`
+- [x] `Main` servidor
+- [x] Interfaz gráfica (Swing)
+- [x] Stress client
 - [ ] Paper / informe
