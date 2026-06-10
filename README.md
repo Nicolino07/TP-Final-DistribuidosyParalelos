@@ -15,51 +15,55 @@ Para eso construimos dos programas que corren en paralelo:
 
 ---
 
-## Los tres escenarios de concurrencia
+## Los escenarios de concurrencia
 
 ### Escenario 1 — Doble contratación simultánea
 **Mecanismo: `ReadWriteLock` por nodo**
 
-Dos consumidores intentan contratar al mismo trabajador al mismo tiempo. Solo uno puede ganar — el segundo recibe error de trabajador ocupado. Sin sincronización ambos creen haber contratado al mismo trabajador.
+50 hilos intentan contratar al mismo trabajador al mismo tiempo. Solo uno puede ganar — los 49 restantes reciben error de trabajador ocupado. Sin sincronización varios hilos creerían haber contratado al mismo trabajador.
 
 ### Escenario 2 — Contrato que expira
 **Mecanismo: Monitor con `wait`/`notifyAll`**
 
-Un hilo del sistema (`HiloExpiracionContratos`) revisa periódicamente los contratos activos y libera al trabajador cuando el tiempo estimado vence. Este hilo compite con los hilos de usuario por el lock del nodo.
+Un hilo del sistema (`HiloExpiracionContratos`) revisa periódicamente los contratos activos y libera al trabajador cuando el tiempo estimado vence. El stress client crea 5 contratos con expiración corta en paralelo y verifica que todos se liberen automáticamente.
 
 ### Escenario 3 — Calificación solo al finalizar
 **Mecanismo: Semáforo por contrato**
 
-Un consumidor solo puede calificar a un trabajador si tiene un contrato en estado `FINALIZADO` con él. El semáforo bloquea el intento de calificación hasta que el contrato cambia de estado.
+Un consumidor solo puede calificar a un trabajador si tiene un contrato en estado `FINALIZADO` con él. El stress client lanza 5 hilos calificadores simultáneos — todos quedan bloqueados en `semaforo.acquire()` hasta que se envían los FINALIZAR correspondientes.
+
+### Escenario 4 — Benchmark de throughput
+**Mecanismo: todos en conjunto bajo carga real**
+
+30 hilos (20 lecturas + 10 escrituras) durante 10 segundos contra el servidor. Mide requests/segundo y latencia promedio por tipo de operación. Resultado típico: ~13.000 req/s con ~130.000 requests totales.
 
 ---
 
 ## Arquitectura
 
 ```
-TP-Final-DistribuidosyParalelos/
-├── servidor/          — Proceso 1: aplicación principal
-│   └── src/main/java/com/tp/distribuidos/servidor/
-│       ├── modelo/
-│       │   ├── Oficio.java
-│       │   ├── EstadoTrabajador.java
-│       │   ├── EstadoContrato.java
-│       │   ├── Trabajador.java
-│       │   ├── Consumidor.java
-│       │   ├── Contrato.java
-│       │   ├── Calificacion.java
-│       │   ├── NodoTrabajador.java        ← región crítica
-│       │   └── GrafoTrabajadores.java     ← contenedor del grafo
-│       ├── HiloExpiracionContratos.java   ← escenario 2
-│       ├── PersistenciaGrafo.java         ← serialización a disco
-│       ├── ProtocoloParser.java           ← parser de comandos TCP
-│       ├── ManejadorCliente.java          ← atiende una conexión TCP
-│       ├── ServidorTCP.java               ← acepta conexiones
-│       └── Main.java                      ← arranca todo
+src/main/java/
+├── servidor/                              — Proceso 1: aplicación principal
+│   ├── modelo/
+│   │   ├── Oficio.java
+│   │   ├── EstadoTrabajador.java
+│   │   ├── EstadoContrato.java
+│   │   ├── Trabajador.java
+│   │   ├── Consumidor.java
+│   │   ├── Contrato.java
+│   │   ├── Calificacion.java
+│   │   ├── NodoTrabajador.java            ← región crítica (3 mecanismos)
+│   │   └── GrafoTrabajadores.java         ← contenedor del grafo
+│   ├── HiloExpiracionContratos.java       ← escenario 2
+│   ├── PersistenciaGrafo.java             ← serialización a disco
+│   ├── ProtocoloParser.java               ← parser de comandos TCP
+│   ├── ManejadorCliente.java              ← atiende una conexión TCP
+│   ├── ServidorTCP.java                   ← acepta conexiones
+│   ├── VentanaPrincipal.java              ← interfaz gráfica Swing
+│   └── Main.java                          ← arranca todo
 │
-└── stress-client/     — Proceso 2: cliente de carga
-    └── src/main/java/com/tp/distribuidos/cliente/
-        └── Main.java
+└── cliente/                               — Proceso 2: stress client
+    └── Main.java
 ```
 
 ---
@@ -131,7 +135,7 @@ Ejemplo de sesión:
 ## Stack tecnológico
 
 - **Java 17 LTS**
-- **Maven** multi-módulo (`servidor` + `stress-client`)
+- **Maven** módulo único con dos jars ejecutables (`servidor` + `stress-client`)
 - **Swing** para la interfaz gráfica
 - **Serialización Java nativa** para persistencia (`grafo.dat`)
 - Sin dependencias externas — todo con la biblioteca estándar de Java
@@ -182,6 +186,7 @@ Al cerrar la aplicación el grafo se serializa automáticamente a `grafo.dat`. A
 - [x] `ManejadorCliente`
 - [x] `ServidorTCP`
 - [x] `Main` servidor
-- [x] Interfaz gráfica (Swing)
-- [x] Stress client
+- [x] Interfaz gráfica Swing (tabla de trabajadores + log en tiempo real)
+- [x] Stress client — 4 escenarios, carga inicial de 20 trabajadores, benchmark de throughput
+- [ ] Interfaz gráfica del stress client
 - [ ] Paper / informe

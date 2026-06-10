@@ -3,86 +3,175 @@ package cliente;
 import java.io.*;
 import java.net.Socket;
 import java.time.LocalDateTime;
-import java.time.format.DateTimeParseException;
+import java.util.*;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
-/**
- * Stress client — demuestra los tres escenarios de concurrencia.
- *
- * Escenario 1: N hilos intentan contratar al mismo trabajador simultáneamente.
- *              Solo uno gana; el resto recibe ERROR de trabajador ocupado.
- *
- * Escenario 2: Crea un contrato que expira en 3 segundos y verifica que
- *              el HiloExpiracionContratos lo libera automáticamente.
- *
- * Escenario 3: Un hilo intenta calificar antes de que el contrato finalice.
- *              La llamada bloquea hasta que otro hilo envía FINALIZAR.
- */
 public class Main {
 
     private static final String HOST   = "localhost";
     private static final int    PUERTO = 9090;
 
-    private static final AtomicInteger totalOK     = new AtomicInteger(0);
-    private static final AtomicInteger totalError  = new AtomicInteger(0);
+    // -------------------------------------------------------
+    // Datos realistas para la carga inicial
+    // -------------------------------------------------------
+    private static final Object[][] TRABAJADORES = {
+        {"al-01","Roberto","ALBANIL",    "Albanil con 15 años de experiencia en obra gruesa"},
+        {"al-02","Miguel", "ALBANIL",    "Especialista en revoques y cimientos"},
+        {"al-03","Diego",  "ALBANIL",    "Albanil matriculado, zona norte"},
+        {"al-04","Facundo","ALBANIL",    "Albanil y pintor, trabajos interiores"},
+        {"al-05","Gonzalo","ALBANIL",    "Albanil con experiencia en piscinas"},
+        {"el-01","Maria",  "ELECTRICISTA","Electricista matriculada, instalaciones industriales"},
+        {"el-02","Laura",  "ELECTRICISTA","Electricista, domotica y paneles solares"},
+        {"el-03","Sofia",  "ELECTRICISTA","Electricista residencial y comercial"},
+        {"el-04","Ana",    "ELECTRICISTA","Electricista, tableros y media tension"},
+        {"pl-01","Carlos", "PLOMERO",    "Plomero gasista, instalaciones nuevas y reparaciones"},
+        {"pl-02","Pedro",  "PLOMERO",    "Plomero matriculado, urgencias 24hs"},
+        {"pl-03","Hector", "PLOMERO",    "Plomero especializado en calefaccion"},
+        {"pl-04","Mario",  "PLOMERO",    "Plomero, desagues y cloacas"},
+        {"ca-01","Jorge",  "CARPINTERO", "Carpintero muebles a medida y restauracion"},
+        {"ca-02","Luis",   "CARPINTERO", "Carpintero, decks y estructuras de madera"},
+        {"ca-03","Ricardo","CARPINTERO", "Carpintero especializado en aberturas"},
+        {"ma-01","Alberto","MAESTRO",    "Maestro mayor de obras, direccion tecnica"},
+        {"ma-02","Fernando","MAESTRO",   "Maestro de obra, refacciones y ampliaciones"},
+        {"pr-01","Patricia","PROFESOR",  "Profesora de matematica y fisica, nivel secundario"},
+        {"pr-02","Claudia", "PROFESOR",  "Profesora particular, primaria y secundaria"},
+    };
+
+    // Calificaciones históricas para poblar el grafo con datos reales
+    private static final Object[][] HISTORIAL = {
+        {"al-01", 5, "Excelente trabajo, muy prolijo"},
+        {"al-01", 4, "Buen trabajo, puntual"},
+        {"al-01", 5, "Lo recomiendo sin dudas"},
+        {"al-02", 3, "Trabajo aceptable, demoró más de lo pactado"},
+        {"al-02", 4, "Bien en general"},
+        {"al-03", 5, "Perfecto, muy limpio"},
+        {"al-04", 2, "Tardó mucho, resultado regular"},
+        {"al-05", 4, "Buen trabajo con la piscina"},
+        {"el-01", 5, "Instalacion impecable, muy profesional"},
+        {"el-01", 5, "Rapida y eficiente"},
+        {"el-02", 4, "Buen trabajo con la domotica"},
+        {"el-03", 3, "Cumplió pero sin destacarse"},
+        {"el-04", 5, "Excelente, resolvio el problema en el dia"},
+        {"pl-01", 4, "Solucionó la perdida rapidamente"},
+        {"pl-01", 5, "Muy recomendable"},
+        {"pl-02", 5, "Llego en menos de una hora, problema resuelto"},
+        {"pl-03", 4, "Buen trabajo con la caldera"},
+        {"pl-04", 3, "Tardo pero quedó bien"},
+        {"ca-01", 5, "Los muebles quedaron hermosos"},
+        {"ca-02", 4, "Buen deck, prolijo"},
+        {"ca-03", 5, "Las ventanas quedaron perfectas"},
+        {"ma-01", 5, "Excelente direccion de obra"},
+        {"ma-02", 4, "Buena coordinacion del trabajo"},
+        {"pr-01", 5, "Mi hijo aprobó gracias a ella"},
+        {"pr-02", 4, "Muy didactica y paciente"},
+    };
+
+    // Workers dedicados al benchmark (no se usan en otros escenarios)
+    private static final String[] IDS_BENCH = {
+        "bench-01","bench-02","bench-03","bench-04","bench-05"
+    };
+
+    record OpResult(String tipo, boolean ok, long latencyMs) {}
 
     public static void main(String[] args) throws InterruptedException {
-        System.out.println("========================================");
-        System.out.println("  STRESS CLIENT — Distribuidos y Paralelos");
-        System.out.println("  Servidor: " + HOST + ":" + PUERTO);
-        System.out.println("========================================\n");
+        imprimir("╔══════════════════════════════════════════════╗");
+        imprimir("║  STRESS CLIENT — Distribuidos y Paralelos    ║");
+        imprimir("║  Servidor: " + HOST + ":" + PUERTO + "                          ║");
+        imprimir("╚══════════════════════════════════════════════╝");
 
-        // Registrar trabajadores de prueba (ignora duplicados entre corridas)
-        enviar("REGISTRAR stress-t1 Juan ALBANIL \"Albanil de prueba\"");
-        enviar("REGISTRAR stress-t2 Ana  ELECTRICISTA \"Electricista de prueba\"");
-        enviar("REGISTRAR stress-t3 Carlos PLOMERO \"Plomero de prueba\"");
+        faseCargaInicial();
 
-        System.out.println(">>> Escenario 1: Doble contratacion simultanea (ReadWriteLock)");
-        escenario1("stress-t1");
+        imprimir("\n>>> Escenario 1: Doble contratacion simultanea — 50 hilos (ReadWriteLock)");
+        escenario1("al-01", 50);
         Thread.sleep(500);
 
-        System.out.println("\n>>> Escenario 2: Contrato que expira (Monitor wait/notifyAll)");
-        escenario2("stress-t3");
+        imprimir("\n>>> Escenario 2: 5 contratos expirando en paralelo (Monitor wait/notifyAll)");
+        escenario2(new String[]{"al-02","el-01","pl-01","ca-01","ma-01"});
         Thread.sleep(500);
 
-        System.out.println("\n>>> Escenario 3: Calificacion bloqueada hasta finalizar (Semaforo)");
-        escenario3("stress-t2");
+        imprimir("\n>>> Escenario 3: 5 calificaciones bloqueadas simultaneas (Semaforo)");
+        escenario3(new String[]{"al-03","el-02","pl-02","ca-02","ma-02"});
+        Thread.sleep(500);
 
-        System.out.println("\n========================================");
-        System.out.println("  RESUMEN");
-        System.out.printf ("  OK: %d  |  Errores esperados: %d%n", totalOK.get(), totalError.get());
-        System.out.println("========================================");
+        imprimir("\n>>> Escenario 4: Benchmark de throughput — 30 hilos x 10 segundos");
+        escenario4();
+
+        imprimir("");
     }
 
     // -------------------------------------------------------
-    // Escenario 1: N hilos compiten por el mismo trabajador
+    // FASE 0: Carga inicial — registra 20 trabajadores y carga
+    // historial de calificaciones para poblar el grafo.
     // -------------------------------------------------------
-    private static void escenario1(String idTrabajador) throws InterruptedException {
-        final int N = 10;
-        ExecutorService pool    = Executors.newFixedThreadPool(N);
-        CountDownLatch  listos  = new CountDownLatch(N);
-        CountDownLatch  largada = new CountDownLatch(1);
-        AtomicInteger   ganaron = new AtomicInteger(0);
-        AtomicInteger   perdieron = new AtomicInteger(0);
+    private static void faseCargaInicial() throws InterruptedException {
+        imprimir("\n>>> [CARGA INICIAL] Registrando trabajadores y cargando historial...");
 
-        for (int i = 0; i < N; i++) {
-            final String idConsumidor = "c-e1-" + i;
+        int registrados = 0;
+        for (Object[] t : TRABAJADORES) {
+            String resp = enviar(String.format("REGISTRAR %s %s %s \"%s\"", t[0], t[1], t[2], t[3]));
+            if ("OK".equals(resp)) registrados++;
+        }
+
+        // Workers para el benchmark
+        for (String id : IDS_BENCH) {
+            enviar(String.format("REGISTRAR %s Bench-Worker ALBANIL \"Worker de benchmark\"", id));
+        }
+
+        // Cargar historial: ciclo contratar → finalizar → calificar secuencial
+        int calificaciones = 0;
+        for (int i = 0; i < HISTORIAL.length; i++) {
+            Object[] h = HISTORIAL[i];
+            String idT = (String) h[0];
+            int    pts = (int)   h[1];
+            String com = (String) h[2];
+            String idC = "hist-c" + i;
+            String fin = LocalDateTime.now().plusSeconds(1).toString();
+            String resp = enviar(String.format("CONTRATAR %s %s \"Trabajo previo\" \"%s\"", idT, idC, fin));
+            if (resp != null && resp.startsWith("OK contrato:")) {
+                String idContrato = resp.substring("OK contrato:".length()).trim();
+                enviar("FINALIZAR " + idT + " " + idContrato);
+                String cal = enviar(String.format("CALIFICAR %s %s %d \"%s\"", idT, idContrato, pts, com));
+                if (cal != null && cal.startsWith("OK")) calificaciones++;
+            }
+        }
+
+        imprimir(String.format("  Trabajadores registrados : %d (+ %d de benchmark)", registrados, IDS_BENCH.length));
+        imprimir(String.format("  Calificaciones históricas: %d", calificaciones));
+        imprimir("  Top albaniles: " + enviar("BUSCAR ALBANIL"));
+        imprimir("  Top electricistas: " + enviar("BUSCAR ELECTRICISTA"));
+        imprimir("  " + enviar("STATS"));
+    }
+
+    // -------------------------------------------------------
+    // ESCENARIO 1: N hilos compiten por el mismo trabajador.
+    // Solo uno gana — el resto recibe ERROR de trabajador ocupado.
+    // -------------------------------------------------------
+    private static void escenario1(String idTrabajador, int n) throws InterruptedException {
+        ExecutorService pool    = Executors.newFixedThreadPool(n);
+        CountDownLatch  listos  = new CountDownLatch(n);
+        CountDownLatch  largada = new CountDownLatch(1);
+        AtomicInteger   ganaron    = new AtomicInteger(0);
+        AtomicInteger   rechazados = new AtomicInteger(0);
+        List<String>    contratos  = Collections.synchronizedList(new ArrayList<>());
+
+        for (int i = 0; i < n; i++) {
+            final String idC = "e1-c" + i;
             pool.submit(() -> {
                 listos.countDown();
                 try {
-                    largada.await(); // todos esperan juntos
+                    largada.await();
                     String fin  = LocalDateTime.now().plusMinutes(30).toString();
-                    String resp = enviar("CONTRATAR " + idTrabajador + " " + idConsumidor
-                            + " \"Trabajo stress\" \"" + fin + "\"");
+                    String resp = enviar(String.format(
+                        "CONTRATAR %s %s \"Trabajo stress\" \"%s\"", idTrabajador, idC, fin));
                     if (resp != null && resp.startsWith("OK")) {
                         ganaron.incrementAndGet();
-                        totalOK.incrementAndGet();
-                        System.out.println("  [" + idConsumidor + "] CONTRATADO: " + resp);
+                        contratos.add(resp.substring("OK contrato:".length()).trim());
+                        imprimir("  [" + idC + "] CONTRATADO ✓");
                     } else {
-                        perdieron.incrementAndGet();
-                        totalError.incrementAndGet();
-                        System.out.println("  [" + idConsumidor + "] RECHAZADO:  " + resp);
+                        rechazados.incrementAndGet();
+                        imprimir("  [" + idC + "] RECHAZADO  → " + resp);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -91,96 +180,241 @@ public class Main {
         }
 
         listos.await();
-        largada.countDown(); // ¡ya! todos salen al mismo tiempo
+        largada.countDown();
         pool.shutdown();
-        pool.awaitTermination(10, TimeUnit.SECONDS);
+        pool.awaitTermination(15, TimeUnit.SECONDS);
 
-        System.out.println("  Resultado E1 → Ganaron: " + ganaron.get()
-                + " | Rechazados: " + perdieron.get()
-                + " (esperado: 1 ganador, " + (N - 1) + " rechazados)");
+        imprimir(String.format("  Resultado E1 → Ganaron: %d | Rechazados: %d  (esperado: 1 ganador, %d rechazados)",
+            ganaron.get(), rechazados.get(), n - 1));
 
-        // Limpiar: finalizar el contrato activo para el siguiente escenario
-        String nodo = enviar("OBTENER " + idTrabajador);
-        // No tenemos el idContrato aquí, pero lo dejamos vencer o usamos FINALIZAR con dummy
-    }
-
-    // -------------------------------------------------------
-    // Escenario 2: contrato con expiración corta
-    // -------------------------------------------------------
-    private static void escenario2(String idTrabajador) throws InterruptedException {
-        // Asegurar que el trabajador esté disponible
-        enviar("REGISTRAR " + idTrabajador + " Carlos PLOMERO \"Plomero de prueba\"");
-
-        String fin  = LocalDateTime.now().plusSeconds(4).toString();
-        String resp = enviar("CONTRATAR " + idTrabajador + " c-e2 \"Trabajo corto\" \"" + fin + "\"");
-        System.out.println("  Contrato creado: " + resp);
-
-        System.out.println("  Estado antes : " + enviar("OBTENER " + idTrabajador));
-        System.out.println("  Esperando 8s para que HiloExpiracion actue...");
-        Thread.sleep(8000);
-        String estadoDespues = enviar("OBTENER " + idTrabajador);
-        System.out.println("  Estado despues: " + estadoDespues);
-
-        boolean ok = estadoDespues != null && estadoDespues.contains("Disponible");
-        System.out.println("  Resultado E2 → " + (ok ? "CORRECTO: trabajador volvio a Disponible" : "ERROR: no cambio estado"));
-        (ok ? totalOK : totalError).incrementAndGet();
-    }
-
-    // -------------------------------------------------------
-    // Escenario 3: calificacion bloqueada por semaforo
-    // -------------------------------------------------------
-    private static void escenario3(String idTrabajador) throws InterruptedException {
-        String fin  = LocalDateTime.now().plusMinutes(30).toString();
-        String resp = enviar("CONTRATAR " + idTrabajador + " c-e3 \"Trabajo a calificar\" \"" + fin + "\"");
-        System.out.println("  Contrato creado: " + resp);
-
-        if (resp == null || !resp.startsWith("OK contrato:")) {
-            System.out.println("  SKIP E3: no se pudo crear el contrato (trabajador ocupado?)");
-            return;
+        // Limpiar: finalizar el contrato ganador para dejar el worker libre
+        if (!contratos.isEmpty()) {
+            enviar("FINALIZAR " + idTrabajador + " " + contratos.get(0));
         }
-        String idContrato = resp.substring("OK contrato:".length()).trim();
-
-        AtomicInteger resultado   = new AtomicInteger(0);
-        CountDownLatch calInicio  = new CountDownLatch(1);
-
-        // Hilo calificador: se bloquea esperando la finalización
-        Thread hiloCalificar = new Thread(() -> {
-            System.out.println("  [Calificador] Intentando calificar (se bloqueara hasta FINALIZAR)...");
-            calInicio.countDown();
-            String r = enviar("CALIFICAR " + idTrabajador + " " + idContrato + " 5 \"Excelente\"");
-            System.out.println("  [Calificador] Respuesta recibida: " + r);
-            resultado.set(r != null && r.startsWith("OK") ? 1 : -1);
-        }, "HiloCalificador");
-        hiloCalificar.setDaemon(true);
-        hiloCalificar.start();
-
-        calInicio.await();
-        Thread.sleep(2000); // le damos tiempo al hilo de bloquearse
-
-        System.out.println("  [Principal]   Enviando FINALIZAR ahora...");
-        System.out.println("  [Principal]   " + enviar("FINALIZAR " + idTrabajador + " " + idContrato));
-
-        hiloCalificar.join(5000);
-
-        boolean ok = resultado.get() == 1;
-        System.out.println("  Resultado E3 → " + (ok ? "CORRECTO: calificacion se desbloqueo al finalizar" : "ERROR: no se desbloqueo"));
-        (ok ? totalOK : totalError).incrementAndGet();
     }
 
     // -------------------------------------------------------
-    // Abre una conexión TCP, envía un comando y lee la respuesta
+    // ESCENARIO 2: Varios contratos expiran simultáneamente.
+    // El HiloExpiracionContratos debe liberarlos a todos.
     // -------------------------------------------------------
+    private static void escenario2(String[] trabajadores) throws InterruptedException {
+        List<String> idContratos = new ArrayList<>();
+
+        for (String id : trabajadores) {
+            String fin  = LocalDateTime.now().plusSeconds(4).toString();
+            String resp = enviar(String.format(
+                "CONTRATAR %s e2-c \"%s\" \"%s\"", id, "Trabajo corto", fin));
+            if (resp != null && resp.startsWith("OK contrato:")) {
+                idContratos.add(resp.substring("OK contrato:".length()).trim());
+                imprimir("  Contrato creado para " + id + " → expira en 4s");
+            } else {
+                imprimir("  SKIP " + id + ": " + resp);
+            }
+        }
+
+        imprimir("  Estado antes  → " + estadoResumido(trabajadores));
+        imprimir("  Esperando 8s para que HiloExpiracion actue...");
+        Thread.sleep(8000);
+        imprimir("  Estado despues → " + estadoResumido(trabajadores));
+
+        long liberados = Arrays.stream(trabajadores)
+            .map(id -> enviar("OBTENER " + id))
+            .filter(r -> r != null && r.contains("Disponible"))
+            .count();
+
+        boolean ok = liberados == trabajadores.length;
+        imprimir(String.format("  Resultado E2 → %s: %d/%d contratos expirados",
+            ok ? "CORRECTO" : "PARCIAL", liberados, trabajadores.length));
+    }
+
+    // -------------------------------------------------------
+    // ESCENARIO 3: N calificaciones bloqueadas simultáneamente.
+    // Cada hilo calificador espera su propio semáforo de contrato.
+    // -------------------------------------------------------
+    private static void escenario3(String[] trabajadores) throws InterruptedException {
+        // Crear contratos para todos los workers
+        Map<String, String> contratos = new LinkedHashMap<>();
+        for (String id : trabajadores) {
+            String fin  = LocalDateTime.now().plusMinutes(30).toString();
+            String resp = enviar(String.format(
+                "CONTRATAR %s e3-c \"%s\" \"%s\"", id, "Trabajo a calificar", fin));
+            if (resp != null && resp.startsWith("OK contrato:")) {
+                contratos.put(id, resp.substring("OK contrato:".length()).trim());
+                imprimir("  Contrato activo: " + id);
+            }
+        }
+
+        CountDownLatch todosListos = new CountDownLatch(contratos.size());
+        AtomicInteger  desbloqueados = new AtomicInteger(0);
+
+        // Lanzar un hilo calificador por cada contrato — todos se bloquearán
+        List<Thread> hilosCalif = new ArrayList<>();
+        for (Map.Entry<String, String> e : contratos.entrySet()) {
+            String idT = e.getKey(), idCont = e.getValue();
+            Thread t = new Thread(() -> {
+                todosListos.countDown();
+                String r = enviar(String.format("CALIFICAR %s %s 5 \"Excelente\"", idT, idCont));
+                if (r != null && r.startsWith("OK")) {
+                    desbloqueados.incrementAndGet();
+                    imprimir("  [" + idT + "] Calificacion desbloqueada → " + r);
+                }
+            }, "Calificador-" + idT);
+            t.setDaemon(true);
+            t.start();
+            hilosCalif.add(t);
+        }
+
+        todosListos.await();
+        Thread.sleep(1500); // tiempo para que todos estén bloqueados en acquire()
+
+        imprimir("  Todos los hilos bloqueados. Enviando FINALIZAR a los " + contratos.size() + " contratos...");
+        for (Map.Entry<String, String> e : contratos.entrySet()) {
+            enviar("FINALIZAR " + e.getKey() + " " + e.getValue());
+        }
+
+        for (Thread t : hilosCalif) t.join(5000);
+
+        boolean ok = desbloqueados.get() == contratos.size();
+        imprimir(String.format("  Resultado E3 → %s: %d/%d hilos desbloqueados",
+            ok ? "CORRECTO" : "PARCIAL", desbloqueados.get(), contratos.size()));
+    }
+
+    // -------------------------------------------------------
+    // ESCENARIO 4: Benchmark de throughput.
+    // 20 hilos de lectura + 10 hilos de escritura durante 10 segundos.
+    // Mide requests/segundo y latencia promedio por tipo de operación.
+    // -------------------------------------------------------
+    private static void escenario4() throws InterruptedException {
+        final int HILOS_LECTURA  = 20;
+        final int HILOS_ESCRITURA = 10;
+        final int DURACION_MS    = 10_000;
+
+        ConcurrentLinkedQueue<OpResult> resultados = new ConcurrentLinkedQueue<>();
+        CountDownLatch inicio = new CountDownLatch(1);
+
+        ExecutorService pool = Executors.newFixedThreadPool(HILOS_LECTURA + HILOS_ESCRITURA);
+
+        // Hilos de lectura — BUSCAR, LISTAR, OBTENER, STATS
+        String[] oficios = {"ALBANIL","ELECTRICISTA","PLOMERO","CARPINTERO"};
+        for (int i = 0; i < HILOS_LECTURA; i++) {
+            final int idx = i;
+            pool.submit(() -> {
+                try { inicio.await(); } catch (InterruptedException e) { return; }
+                long fin = System.currentTimeMillis() + DURACION_MS;
+                Random rnd = new Random();
+                while (System.currentTimeMillis() < fin) {
+                    String[] ops = {
+                        "BUSCAR " + oficios[rnd.nextInt(oficios.length)],
+                        "LISTAR",
+                        "OBTENER al-0" + (rnd.nextInt(5) + 1),
+                        "STATS"
+                    };
+                    String cmd  = ops[rnd.nextInt(ops.length)];
+                    String tipo = cmd.split(" ")[0];
+                    long t0 = System.currentTimeMillis();
+                    String resp = enviar(cmd);
+                    long lat = System.currentTimeMillis() - t0;
+                    resultados.add(new OpResult(tipo, resp != null && !resp.startsWith("ERROR"), lat));
+                }
+            });
+        }
+
+        // Hilos de escritura — CONTRATAR + FINALIZAR ciclos sobre bench workers
+        for (int i = 0; i < HILOS_ESCRITURA; i++) {
+            final int idx = i;
+            pool.submit(() -> {
+                try { inicio.await(); } catch (InterruptedException e) { return; }
+                long fin = System.currentTimeMillis() + DURACION_MS;
+                String idT = IDS_BENCH[idx % IDS_BENCH.length];
+                String idC = "bench-usr-" + idx;
+                while (System.currentTimeMillis() < fin) {
+                    String finEstimado = LocalDateTime.now().plusMinutes(1).toString();
+                    long t0   = System.currentTimeMillis();
+                    String r1 = enviar(String.format("CONTRATAR %s %s \"Bench\" \"%s\"", idT, idC, finEstimado));
+                    long latC = System.currentTimeMillis() - t0;
+                    boolean contratado = r1 != null && r1.startsWith("OK contrato:");
+                    resultados.add(new OpResult("CONTRATAR", contratado, latC));
+
+                    if (contratado) {
+                        String idCont = r1.substring("OK contrato:".length()).trim();
+                        t0 = System.currentTimeMillis();
+                        String r2 = enviar("FINALIZAR " + idT + " " + idCont);
+                        resultados.add(new OpResult("FINALIZAR", "OK".equals(r2), System.currentTimeMillis() - t0));
+                    }
+                }
+            });
+        }
+
+        imprimir(String.format("  Lecturas: %d hilos  |  Escrituras: %d hilos  |  Duración: %ds",
+            HILOS_LECTURA, HILOS_ESCRITURA, DURACION_MS / 1000));
+        imprimir("  Corriendo...");
+
+        long tInicio = System.currentTimeMillis();
+        inicio.countDown();
+        pool.shutdown();
+        pool.awaitTermination(DURACION_MS + 5000, TimeUnit.MILLISECONDS);
+        long duracionReal = System.currentTimeMillis() - tInicio;
+
+        // Calcular estadísticas por tipo
+        Map<String, List<OpResult>> porTipo = resultados.stream()
+            .collect(Collectors.groupingBy(OpResult::tipo));
+
+        imprimir("");
+        imprimir(String.format("  %-12s │ %8s │ %6s │ %7s │ %8s │ %9s",
+            "Operación", "Requests", "OK", "Errores", "Req/s", "Lat. prom"));
+        imprimir("  " + "─".repeat(68));
+
+        long totalReqs = 0, totalOK = 0;
+        for (String tipo : new String[]{"BUSCAR","LISTAR","OBTENER","STATS","CONTRATAR","FINALIZAR"}) {
+            List<OpResult> ops = porTipo.getOrDefault(tipo, List.of());
+            if (ops.isEmpty()) continue;
+            long ok     = ops.stream().filter(OpResult::ok).count();
+            long err    = ops.size() - ok;
+            double rps  = ops.size() * 1000.0 / duracionReal;
+            double lat  = ops.stream().mapToLong(OpResult::latencyMs).average().orElse(0);
+            imprimir(String.format("  %-12s │ %8d │ %6d │ %7d │ %8.1f │ %7.1f ms",
+                tipo, ops.size(), ok, err, rps, lat));
+            totalReqs += ops.size();
+            totalOK   += ok;
+        }
+        imprimir("  " + "─".repeat(68));
+        imprimir(String.format("  %-12s │ %8d │ %6d │ %7d │ %8.1f │",
+            "TOTAL", totalReqs, totalOK, totalReqs - totalOK,
+            totalReqs * 1000.0 / duracionReal));
+
+        imprimir(String.format("%n  Resultado E4 → %.0f req/s  |  %d requests totales  |  %.1f%% éxito",
+            totalReqs * 1000.0 / duracionReal, totalReqs,
+            totalOK * 100.0 / totalReqs));
+    }
+
+    // -------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------
+
+    private static String estadoResumido(String[] ids) {
+        StringBuilder sb = new StringBuilder();
+        for (String id : ids) {
+            String r = enviar("OBTENER " + id);
+            String estado = r != null ? (r.contains("Disponible") ? "Disponible" : "En trabajo") : "?";
+            sb.append(id).append(":").append(estado).append("  ");
+        }
+        return sb.toString().trim();
+    }
+
     private static String enviar(String comando) {
         try (
-            Socket     s   = new Socket(HOST, PUERTO);
-            PrintWriter out = new PrintWriter(new OutputStreamWriter(s.getOutputStream()), true);
-            BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+            Socket         s   = new Socket(HOST, PUERTO);
+            PrintWriter    out = new PrintWriter(new OutputStreamWriter(s.getOutputStream()), true);
+            BufferedReader in  = new BufferedReader(new InputStreamReader(s.getInputStream()))
         ) {
             out.println(comando);
             return in.readLine();
         } catch (IOException e) {
-            System.err.println("  [Error TCP] " + e.getMessage() + " | cmd: " + comando);
             return null;
         }
+    }
+
+    private static void imprimir(String msg) {
+        System.out.println(msg);
     }
 }
