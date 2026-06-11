@@ -7,3 +7,5 @@
   siguiente comando para encender cliente:
 
   java -jar target/stress-client.jar 
+
+nuevo commit
