@@ -149,13 +149,28 @@ public class ManejadorCliente implements Runnable {
         }
         List<NodoTrabajador> resultado = grafo.buscarPorOficio(oficio);
         if (resultado.isEmpty()) return "VACIO";
+
         StringBuilder sb = new StringBuilder();
+        boolean esPrimero = true;
+
         for (NodoTrabajador n : resultado) {
-            sb.append(n.getTrabajador().getId())
-              .append(":").append(String.format("%.1f", n.getPromedio()))
-              .append(" ");
+            // Si el ID empieza con "bench", lo salteamos para que no ensucie el Top
+            if (n.getTrabajador().getId().startsWith("bench")) {
+                continue;
+            }
+
+            if (!esPrimero) {
+                sb.append("  /  ");
+            }
+            sb.append(n.getTrabajador().getNombre())
+                    .append(" (").append(n.getTrabajador().getId()).append(")")
+                    .append(" * ").append(String.format("%.1f", n.getPromedio()));
+
+            esPrimero = false;
         }
-        return sb.toString().trim();
+
+        // Si la lista tenía solo trabajadores de benchmark y quedó vacía, devolvemos VACIO
+        return sb.isEmpty() ? "VACIO" : sb.toString();
     }
 
     private String ejecutarListar() {

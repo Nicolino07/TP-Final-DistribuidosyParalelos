@@ -1,29 +1,36 @@
 package servidor.modelo;
 
-
 import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
-
+/**
+ * Estructura de datos en memoria que representa el Grafo de Trabajadores.
+ * Implementa Serializable para permitir guardar su estado en disco.
+ * Utiliza un enfoque de exclusión mutua descentralizada.
+ * El grafo maneja la concurrencia estructural de los nodos, mientras que cada
+ * nodo individual maneja la concurrencia de sus propios estados internos.
+ */
 public class GrafoTrabajadores implements Serializable {
 
     private static final long serialVersionUID = 1L;
 
-    // ConcurrentHashMap — thread-safe para operaciones sobre la estructura del grafo.
-    // La sincronización de los datos de cada nodo es responsabilidad de NodoTrabajador.
+    // ConcurrentHashMap es una colección Thread-Safe de alto rendimiento.
+    // Permite lecturas simultáneas sin bloqueos y bloquea por segmentos estructurados
+    // al escribir, garantizando un alto Throughput (peticiones/segundo) bajo estrés.
     private final ConcurrentHashMap<String, NodoTrabajador> nodos;
 
     public GrafoTrabajadores() {
         this.nodos = new ConcurrentHashMap<>();
     }
 
-    // -------------------------------------------------------
-    // Registrar un trabajador nuevo
-    // putIfAbsent es atómica — si dos hilos intentan registrar
-    // el mismo id al mismo tiempo, solo uno gana.
-    // -------------------------------------------------------
+    /**
+     * Registra un nuevo trabajador en el sistema.
+     * Utiliza 'putIfAbsent', una operación ATÓMICA nativa.
+     * Si 50 hilos intentan registrar en paralelo al mismo ID de trabajador,
+     * el ConcurrentHashMap garantiza que solo uno de ellos logrará insertarlo en la estructura.
+     */
     public boolean registrar(Trabajador trabajador) {
         NodoTrabajador nodo = new NodoTrabajador(trabajador);
         NodoTrabajador existente = nodos.putIfAbsent(trabajador.getId(), nodo);
@@ -32,6 +39,7 @@ public class GrafoTrabajadores implements Serializable {
 
     // -------------------------------------------------------
     // Contratar un trabajador — delega al nodo
+    // Busca el nodo de manera thread-safe en el mapa y DELEGA la sincronización
     // -------------------------------------------------------
     public void contratar(String idTrabajador, Contrato contrato)
             throws NodoTrabajador.TrabajadorOcupadoException, TrabajadorNoEncontradoException {

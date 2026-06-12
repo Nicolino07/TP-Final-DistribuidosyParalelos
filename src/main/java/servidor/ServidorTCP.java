@@ -6,13 +6,17 @@ import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.function.Consumer;
-
+/**
+ * Servidor de red basado en el protocolo TCP.
+ * Aplica el patrón Multi-Threaded Connection Handler (un hilo por cliente)
+ * para despachar peticiones de forma concurrente en segundo plano.
+ */
 public class ServidorTCP {
 
     private final int puerto;
     private final GrafoTrabajadores grafo;
     private final Object monitorExpiracion;
-    private final Consumer<String> log;
+    private final Consumer<String> log;// Delegado (Lambda) para enviar mensajes de log a la GUI
 
     private ServerSocket serverSocket;
     private volatile boolean corriendo = false;
@@ -32,7 +36,8 @@ public class ServidorTCP {
         serverSocket = new ServerSocket(puerto);
         corriendo = true;
         log.accept("[Servidor] Escuchando en puerto " + puerto);
-
+        //  Hilo dedicado exclusivamente a recibir conexiones entrantes.
+        // Evita que el hilo principal (GUI) se congele debido al método bloqueante accept().
         Thread aceptador = new Thread(() -> {
             while (corriendo) {
                 try {

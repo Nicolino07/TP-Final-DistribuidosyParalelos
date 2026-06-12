@@ -77,13 +77,13 @@ public class Main {
 
     public static void main(String[] args) throws InterruptedException {
         imprimir("╔══════════════════════════════════════════════╗");
-        imprimir("║  STRESS CLIENT — Distribuidos y Paralelos    ║");
-        imprimir("║  Servidor: " + HOST + ":" + PUERTO + "                          ║");
+        imprimir("║  STRESS CLIENT / Distribuidos y Paralelos    ║");
+        imprimir("║  Servidor: " + HOST + ":" + PUERTO +"                    ║");
         imprimir("╚══════════════════════════════════════════════╝");
 
         faseCargaInicial();
 
-        imprimir("\n>>> Escenario 1: Doble contratacion simultanea — 50 hilos (ReadWriteLock)");
+        imprimir("\n>>> Escenario 1: Doble contratación simultanea / 50 hilos (ReadWriteLock)");
         escenario1("al-01", 50);
         Thread.sleep(500);
 
@@ -95,10 +95,14 @@ public class Main {
         escenario3(new String[]{"al-03","el-02","pl-02","ca-02","ma-02"});
         Thread.sleep(500);
 
-        imprimir("\n>>> Escenario 4: Benchmark de throughput — 30 hilos x 10 segundos");
+        imprimir("\n>>> Escenario 4: Benchmark de throughput -> 30 hilos x 10 segundos");
         escenario4();
 
-        imprimir("");
+        imprimir("\n=== FIN DEL TEST DE ESTRÉS ===");
+
+        // Al ejecutar esto, la JVM mata cualquier hilo remanente y cierra la terminal en el acto
+        System.exit(0);
+
     }
 
     // -------------------------------------------------------
@@ -112,11 +116,13 @@ public class Main {
         for (Object[] t : TRABAJADORES) {
             String resp = enviar(String.format("REGISTRAR %s %s %s \"%s\"", t[0], t[1], t[2], t[3]));
             if ("OK".equals(resp)) registrados++;
+            Thread.sleep(10); // LE DA 10MS A WINDOWS PARA RESPIRAR Y NO AGOTAR LOS PUERTOS
         }
 
         // Workers para el benchmark
         for (String id : IDS_BENCH) {
             enviar(String.format("REGISTRAR %s Bench-Worker ALBANIL \"Worker de benchmark\"", id));
+            Thread.sleep(10);
         }
 
         // Cargar historial: ciclo contratar → finalizar → calificar secuencial
@@ -168,10 +174,10 @@ public class Main {
                     if (resp != null && resp.startsWith("OK")) {
                         ganaron.incrementAndGet();
                         contratos.add(resp.substring("OK contrato:".length()).trim());
-                        imprimir("  [" + idC + "] CONTRATADO ✓");
+                        imprimir("  [" + idC + "] CONTRATADO");
                     } else {
                         rechazados.incrementAndGet();
-                        imprimir("  [" + idC + "] RECHAZADO  → " + resp);
+                        imprimir("  [" + idC + "] RECHAZADO  = " + resp);
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
@@ -184,7 +190,7 @@ public class Main {
         pool.shutdown();
         pool.awaitTermination(15, TimeUnit.SECONDS);
 
-        imprimir(String.format("  Resultado E1 → Ganaron: %d | Rechazados: %d  (esperado: 1 ganador, %d rechazados)",
+        imprimir(String.format("  Resultado E1 = Ganaron: %d | Rechazados: %d  (esperado: 1 ganador, %d rechazados)",
             ganaron.get(), rechazados.get(), n - 1));
 
         // Limpiar: finalizar el contrato ganador para dejar el worker libre
@@ -206,16 +212,16 @@ public class Main {
                 "CONTRATAR %s e2-c \"%s\" \"%s\"", id, "Trabajo corto", fin));
             if (resp != null && resp.startsWith("OK contrato:")) {
                 idContratos.add(resp.substring("OK contrato:".length()).trim());
-                imprimir("  Contrato creado para " + id + " → expira en 4s");
+                imprimir("  Contrato creado para " + id + " = expira en 4s");
             } else {
                 imprimir("  SKIP " + id + ": " + resp);
             }
         }
 
-        imprimir("  Estado antes  → " + estadoResumido(trabajadores));
+        imprimir("  Estado antes  = " + estadoResumido(trabajadores));
         imprimir("  Esperando 8s para que HiloExpiracion actue...");
         Thread.sleep(8000);
-        imprimir("  Estado despues → " + estadoResumido(trabajadores));
+        imprimir("  Estado despues = " + estadoResumido(trabajadores));
 
         long liberados = Arrays.stream(trabajadores)
             .map(id -> enviar("OBTENER " + id))
@@ -223,7 +229,7 @@ public class Main {
             .count();
 
         boolean ok = liberados == trabajadores.length;
-        imprimir(String.format("  Resultado E2 → %s: %d/%d contratos expirados",
+        imprimir(String.format("  Resultado E2 = %s: %d/%d contratos expirados",
             ok ? "CORRECTO" : "PARCIAL", liberados, trabajadores.length));
     }
 
@@ -256,7 +262,7 @@ public class Main {
                 String r = enviar(String.format("CALIFICAR %s %s 5 \"Excelente\"", idT, idCont));
                 if (r != null && r.startsWith("OK")) {
                     desbloqueados.incrementAndGet();
-                    imprimir("  [" + idT + "] Calificacion desbloqueada → " + r);
+                    imprimir("  [" + idT + "] Calificacion desbloqueada = " + r);
                 }
             }, "Calificador-" + idT);
             t.setDaemon(true);
@@ -275,7 +281,7 @@ public class Main {
         for (Thread t : hilosCalif) t.join(5000);
 
         boolean ok = desbloqueados.get() == contratos.size();
-        imprimir(String.format("  Resultado E3 → %s: %d/%d hilos desbloqueados",
+        imprimir(String.format("  Resultado E3 = %s: %d/%d hilos desbloqueados",
             ok ? "CORRECTO" : "PARCIAL", desbloqueados.get(), contratos.size()));
     }
 
@@ -294,32 +300,44 @@ public class Main {
 
         ExecutorService pool = Executors.newFixedThreadPool(HILOS_LECTURA + HILOS_ESCRITURA);
 
-        // Hilos de lectura — BUSCAR, LISTAR, OBTENER, STATS
+        // --- HILOS DE LECTURA CON CONEXIÓN PERSISTENTE ---
         String[] oficios = {"ALBANIL","ELECTRICISTA","PLOMERO","CARPINTERO"};
         for (int i = 0; i < HILOS_LECTURA; i++) {
-            final int idx = i;
             pool.submit(() -> {
                 try { inicio.await(); } catch (InterruptedException e) { return; }
                 long fin = System.currentTimeMillis() + DURACION_MS;
                 Random rnd = new Random();
-                while (System.currentTimeMillis() < fin) {
-                    String[] ops = {
-                        "BUSCAR " + oficios[rnd.nextInt(oficios.length)],
-                        "LISTAR",
-                        "OBTENER al-0" + (rnd.nextInt(5) + 1),
-                        "STATS"
-                    };
-                    String cmd  = ops[rnd.nextInt(ops.length)];
-                    String tipo = cmd.split(" ")[0];
-                    long t0 = System.currentTimeMillis();
-                    String resp = enviar(cmd);
-                    long lat = System.currentTimeMillis() - t0;
-                    resultados.add(new OpResult(tipo, resp != null && !resp.startsWith("ERROR"), lat));
+
+                // OPTIMIZACIÓN: Cada hilo abre UN SOLO socket para usarlo todo el tiempo
+                try (
+                        Socket s = new Socket(HOST, PUERTO);
+                        PrintWriter out = new PrintWriter(new OutputStreamWriter(s.getOutputStream()), true);
+                        BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+                ) {
+                    while (System.currentTimeMillis() < fin) {
+                        String[] ops = {
+                                "BUSCAR " + oficios[rnd.nextInt(oficios.length)],
+                                "LISTAR",
+                                "OBTENER al-0" + (rnd.nextInt(5) + 1),
+                                "STATS"
+                        };
+                        String cmd  = ops[rnd.nextInt(ops.length)];
+                        String tipo = cmd.split(" ")[0];
+
+                        long t0 = System.currentTimeMillis();
+                        out.println(cmd);          // Envía por el socket persistente
+                        String resp = in.readLine(); // Lee por el socket persistente
+                        long lat = System.currentTimeMillis() - t0;
+
+                        resultados.add(new OpResult(tipo, resp != null && !resp.startsWith("ERROR"), lat));
+                    }
+                } catch (IOException e) {
+                    // Si se cae la red de este hilo, termina pacíficamente
                 }
             });
         }
 
-        // Hilos de escritura — CONTRATAR + FINALIZAR ciclos sobre bench workers
+        // --- HILOS DE ESCRITURA CON CONEXIÓN PERSISTENTE ---
         for (int i = 0; i < HILOS_ESCRITURA; i++) {
             final int idx = i;
             pool.submit(() -> {
@@ -327,41 +345,57 @@ public class Main {
                 long fin = System.currentTimeMillis() + DURACION_MS;
                 String idT = IDS_BENCH[idx % IDS_BENCH.length];
                 String idC = "bench-usr-" + idx;
-                while (System.currentTimeMillis() < fin) {
-                    String finEstimado = LocalDateTime.now().plusMinutes(1).toString();
-                    long t0   = System.currentTimeMillis();
-                    String r1 = enviar(String.format("CONTRATAR %s %s \"Bench\" \"%s\"", idT, idC, finEstimado));
-                    long latC = System.currentTimeMillis() - t0;
-                    boolean contratado = r1 != null && r1.startsWith("OK contrato:");
-                    resultados.add(new OpResult("CONTRATAR", contratado, latC));
 
-                    if (contratado) {
-                        String idCont = r1.substring("OK contrato:".length()).trim();
-                        t0 = System.currentTimeMillis();
-                        String r2 = enviar("FINALIZAR " + idT + " " + idCont);
-                        resultados.add(new OpResult("FINALIZAR", "OK".equals(r2), System.currentTimeMillis() - t0));
+                // Un solo socket para toda la ráfaga de escrituras
+                try (
+                        Socket s = new Socket(HOST, PUERTO);
+                        PrintWriter out = new PrintWriter(new OutputStreamWriter(s.getOutputStream()), true);
+                        BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream()))
+                ) {
+                    while (System.currentTimeMillis() < fin) {
+                        String finEstimado = LocalDateTime.now().plusMinutes(1).toString();
+
+                        // 1. CONTRATAR
+                        long t0 = System.currentTimeMillis();
+                        out.println(String.format("CONTRATAR %s %s \"Bench\" \"%s\"", idT, idC, finEstimado));
+                        String r1 = in.readLine();
+                        long latC = System.currentTimeMillis() - t0;
+
+                        boolean contratado = r1 != null && r1.startsWith("OK contrato:");
+                        resultados.add(new OpResult("CONTRATAR", contratado, latC));
+
+                        // 2. FINALIZAR (Solo si se pudo contratar)
+                        if (contratado) {
+                            String idCont = r1.substring("OK contrato:".length()).trim();
+                            t0 = System.currentTimeMillis();
+                            out.println("FINALIZAR " + idT + " " + idCont);
+                            String r2 = in.readLine();
+                            resultados.add(new OpResult("FINALIZAR", "OK".equals(r2), System.currentTimeMillis() - t0));
+                        }
                     }
+                } catch (IOException e) {
+                    // Manejo de caída de hilo
                 }
             });
         }
 
         imprimir(String.format("  Lecturas: %d hilos  |  Escrituras: %d hilos  |  Duración: %ds",
-            HILOS_LECTURA, HILOS_ESCRITURA, DURACION_MS / 1000));
+                HILOS_LECTURA, HILOS_ESCRITURA, DURACION_MS / 1000));
         imprimir("  Corriendo...");
 
         long tInicio = System.currentTimeMillis();
         inicio.countDown();
         pool.shutdown();
-        pool.awaitTermination(DURACION_MS + 5000, TimeUnit.MILLISECONDS);
+        if (!pool.awaitTermination(DURACION_MS + 5000, TimeUnit.MILLISECONDS)) {
+            pool.shutdownNow();}
         long duracionReal = System.currentTimeMillis() - tInicio;
 
-        // Calcular estadísticas por tipo
         Map<String, List<OpResult>> porTipo = resultados.stream()
-            .collect(Collectors.groupingBy(OpResult::tipo));
+                .collect(Collectors.groupingBy(OpResult::tipo));
 
         imprimir("");
         imprimir(String.format("  %-12s │ %8s │ %6s │ %7s │ %8s │ %9s",
-            "Operación", "Requests", "OK", "Errores", "Req/s", "Lat. prom"));
+                "Operación", "Requests", "OK", "Errores", "Req/s", "Lat. prom"));
         imprimir("  " + "─".repeat(68));
 
         long totalReqs = 0, totalOK = 0;
@@ -373,20 +407,19 @@ public class Main {
             double rps  = ops.size() * 1000.0 / duracionReal;
             double lat  = ops.stream().mapToLong(OpResult::latencyMs).average().orElse(0);
             imprimir(String.format("  %-12s │ %8d │ %6d │ %7d │ %8.1f │ %7.1f ms",
-                tipo, ops.size(), ok, err, rps, lat));
+                    tipo, ops.size(), ok, err, rps, lat));
             totalReqs += ops.size();
             totalOK   += ok;
         }
         imprimir("  " + "─".repeat(68));
-        imprimir(String.format("  %-12s │ %8d │ %6d │ %7d │ %8.1f │",
-            "TOTAL", totalReqs, totalOK, totalReqs - totalOK,
-            totalReqs * 1000.0 / duracionReal));
+        imprimir(String.format("  %-12s │ %8d │ %6d │ %7d │ %8.2f │",
+                "TOTAL", totalReqs, totalOK, totalReqs - totalOK,
+                totalReqs * 1000.0 / duracionReal));
 
-        imprimir(String.format("%n  Resultado E4 → %.0f req/s  |  %d requests totales  |  %.1f%% éxito",
-            totalReqs * 1000.0 / duracionReal, totalReqs,
-            totalOK * 100.0 / totalReqs));
+        imprimir(String.format("%n  Resultado E4 = %.0f req/s  |  %d requests totales  |  %.1f%% éxito",
+                totalReqs * 1000.0 / duracionReal, totalReqs,
+                totalOK * 100.0 / totalReqs));
     }
-
     // -------------------------------------------------------
     // Helpers
     // -------------------------------------------------------
