@@ -1,4 +1,4 @@
-# TP Final — Distribuidos y Paralelos
+# TP Final — Distribuidos y Paralelos 
 ## Aplicación de Conceptos de Concurrencia y Regiones Críticas
 
 Plataforma de contratación de servicios (tipo Uber de oficios) desarrollada en Java 17, diseñada para demostrar los conceptos teóricos de concurrencia, regiones críticas y mecanismos de sincronización.
