@@ -4,6 +4,14 @@ import java.io.Serializable;
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/**
+ * Representa un acuerdo de trabajo entre un consumidor y un trabajador.
+ *
+ * <p>El id se genera con {@link java.util.UUID#randomUUID()} para garantizar
+ * unicidad incluso bajo creaciones concurrentes simultáneas.
+ * {@link #estaVencido()} es consultado por {@link servidor.HiloExpiracionContratos}
+ * para determinar si debe expirar el contrato automáticamente.
+ */
 public class Contrato implements Serializable {
 
     private static final long serialVersionUID = 1L;

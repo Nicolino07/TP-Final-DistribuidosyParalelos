@@ -1,5 +1,17 @@
 package servidor;
 
+/**
+ * Parser del protocolo TCP del servidor.
+ *
+ * <p>Transforma una línea de texto en un {@link ProtocoloParser.Comando} tipado.
+ * El formato es {@code TIPO arg1 arg2 "argumento con espacios"}: los argumentos
+ * entre comillas dobles se tratan como un único token, permitiendo descripciones
+ * y comentarios con espacios sin necesidad de encoding.
+ *
+ * <p>Si el tipo no coincide con ningún {@link TipoComando}, devuelve
+ * {@code DESCONOCIDO} en lugar de lanzar excepción, para que
+ * {@link ManejadorCliente} pueda responder con un mensaje de error controlado.
+ */
 public class ProtocoloParser {
 
     // -------------------------------------------------------

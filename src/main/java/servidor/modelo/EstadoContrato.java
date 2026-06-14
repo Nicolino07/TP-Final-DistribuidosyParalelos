@@ -1,5 +1,9 @@
 package servidor.modelo;
 
+/**
+ * Ciclo de vida de un contrato: ACTIVO al crearse, FINALIZADO tras FINALIZAR o expiración.
+ * Solo los contratos FINALIZADO habilitan el acquire() del semáforo de calificación.
+ */
 public enum EstadoContrato {
     ACTIVO("Activo"),
     FINALIZADO("Finalizado"),

@@ -2,6 +2,10 @@ package servidor.modelo;
 
 import java.io.Serializable;
 
+/**
+ * Datos inmutables de identidad de un trabajador (id, nombre, oficio, descripción).
+ * No contiene lógica de concurrencia — eso es responsabilidad de {@link NodoTrabajador}.
+ */
 public class Trabajador implements Serializable {
 
     private static final long serialVersionUID = 1L;

@@ -5,6 +5,24 @@ import servidor.modelo.NodoTrabajador;
 
 import java.util.List;
 
+/**
+ * Hilo daemon que expira contratos vencidos automáticamente.
+ *
+ * <p>Demuestra el patrón <b>Monitor (wait/notifyAll)</b>: el hilo duerme sobre
+ * un objeto monitor compartido con el servidor TCP. Cuando llega un CONTRATAR,
+ * {@link servidor.ManejadorCliente} llama {@code notifyAll()} para despertar
+ * a este hilo antes del intervalo de espera, evitando busy-wait.
+ *
+ * <p>El flujo es:
+ * <ol>
+ *   <li>{@code monitor.wait(INTERVALO_MS)} — duerme hasta notificación o timeout.</li>
+ *   <li>Itera los nodos en trabajo y llama {@code nodo.expirar()} si el contrato venció.</li>
+ *   <li>Vuelve al paso 1.</li>
+ * </ol>
+ *
+ * <p>{@code expirar()} a su vez libera el semáforo del nodo, lo que desbloquea
+ * cualquier hilo que estuviera esperando en CALIFICAR.
+ */
 public class HiloExpiracionContratos extends Thread {
 
     // -------------------------------------------------------

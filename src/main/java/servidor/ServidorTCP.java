@@ -16,16 +16,19 @@ public class ServidorTCP {
     private final int puerto;
     private final GrafoTrabajadores grafo;
     private final Object monitorExpiracion;
-    private final Consumer<String> log;// Delegado (Lambda) para enviar mensajes de log a la GUI
+    private final Consumer<String> log;
+    private final MetricasServidor metricas;
 
     private ServerSocket serverSocket;
     private volatile boolean corriendo = false;
 
-    public ServidorTCP(int puerto, GrafoTrabajadores grafo, Object monitorExpiracion, Consumer<String> log) {
+    public ServidorTCP(int puerto, GrafoTrabajadores grafo, Object monitorExpiracion,
+                       Consumer<String> log, MetricasServidor metricas) {
         this.puerto = puerto;
         this.grafo = grafo;
         this.monitorExpiracion = monitorExpiracion;
         this.log = log;
+        this.metricas = metricas;
     }
 
     // -------------------------------------------------------
@@ -43,7 +46,7 @@ public class ServidorTCP {
                 try {
                     Socket cliente = serverSocket.accept();
                     Thread hiloCliente = new Thread(
-                        new ManejadorCliente(cliente, grafo, monitorExpiracion, log)
+                        new ManejadorCliente(cliente, grafo, monitorExpiracion, log, metricas)
                     );
                     hiloCliente.setDaemon(true);
                     hiloCliente.setName("Cliente-" + cliente.getPort());

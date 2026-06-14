@@ -2,6 +2,12 @@ package servidor.modelo;
 import java.io.Serializable;
 import java.time.LocalDateTime;
 
+/**
+ * Calificación emitida por un consumidor al finalizar un contrato.
+ * El puntaje debe estar entre 1 y 5; se valida en el constructor.
+ * Solo puede crearse después de que {@link NodoTrabajador#calificar(Calificacion)}
+ * supere el acquire() del semáforo, garantizando que el contrato ya fue finalizado.
+ */
 public class Calificacion implements Serializable {
 
     private static final long serialVersionUID = 1L;

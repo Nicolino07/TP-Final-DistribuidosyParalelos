@@ -8,6 +8,29 @@ import java.util.List;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
+/**
+ * Nodo del grafo que representa a un trabajador y su estado en el sistema.
+ *
+ * <p>Es el núcleo de la concurrencia del TP. Cada nodo implementa de forma
+ * independiente los tres mecanismos de sincronización:
+ *
+ * <ul>
+ *   <li><b>ReentrantReadWriteLock</b>: protege todos los campos del nodo.
+ *       Las operaciones de lectura (getTrabajador, getEstado, getPromedio, getCalificaciones)
+ *       adquieren readLock y pueden ejecutarse en paralelo. Las de escritura
+ *       (contratar, finalizar, calificar) adquieren writeLock de forma exclusiva.</li>
+ *   <li><b>Semaphore(0)</b>: garantiza el orden FINALIZAR → CALIFICAR.
+ *       Se crea en 0 al contratar, se libera con release() al finalizar,
+ *       y calificar() bloquea en acquire() hasta que finalizar() haya sido llamado.</li>
+ *   <li><b>Monitor (wait/notifyAll)</b>: notifica a HiloExpiracionContratos
+ *       cuando se crea un contrato nuevo, para que comience a vigilar el vencimiento
+ *       sin necesidad de busy-wait.</li>
+ * </ul>
+ *
+ * <p>Implementa {@link java.io.Serializable} para persistencia en disco.
+ * Los campos transient (lock, monitor, semáforo) se recrean al deserializar
+ * mediante {@code readObject()}.
+ */
 public class NodoTrabajador implements Serializable {
 
     private static final long serialVersionUID = 1L;

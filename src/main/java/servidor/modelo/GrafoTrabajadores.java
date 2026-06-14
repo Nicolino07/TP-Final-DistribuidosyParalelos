@@ -109,6 +109,10 @@ public class GrafoTrabajadores implements Serializable {
         return activos;
     }
 
+    public boolean eliminar(String id) {
+        return nodos.remove(id) != null;
+    }
+
     public int cantidadTrabajadores() {
         return nodos.size();
     }

@@ -9,6 +9,18 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 
+/**
+ * Ventana Swing del servidor — vista de administración local.
+ *
+ * <p>Muestra en tiempo real la tabla de trabajadores (refrescada cada 2 segundos
+ * desde el EDT mediante un {@link javax.swing.Timer}) y un área de log donde
+ * {@link ServidorTCP} y {@link ManejadorCliente} reportan eventos de red.
+ *
+ * <p>Es la única clase que toca componentes Swing; todas las actualizaciones
+ * se redirigen al Event Dispatch Thread mediante {@code SwingUtilities.invokeLater()}.
+ * Los workers con prefijo {@code bench} se filtran de la tabla para mostrar
+ * solo los trabajadores reales del grafo persistido.
+ */
 public class VentanaPrincipal extends JFrame {
 
     private final GrafoTrabajadores grafo;
@@ -85,6 +97,7 @@ public class VentanaPrincipal extends JFrame {
         List<NodoTrabajador> lista = grafo.listarTodos();
         modeloTabla.setRowCount(0);
         for (NodoTrabajador nodo : lista) {
+            if (nodo.getTrabajador().getId().startsWith("bench")) continue;
             Trabajador t = nodo.getTrabajador();
             modeloTabla.addRow(new Object[]{
                 t.getId(),

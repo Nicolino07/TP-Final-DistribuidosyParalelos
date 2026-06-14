@@ -1,5 +1,6 @@
 package servidor.modelo;
 
+/** Categorías de oficio disponibles en la plataforma. Usadas en REGISTRAR y BUSCAR. */
 public enum Oficio {
     ALBANIL("Albañil"),
     ELECTRICISTA("Electricista"),

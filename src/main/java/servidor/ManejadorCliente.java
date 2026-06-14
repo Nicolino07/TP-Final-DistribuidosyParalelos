@@ -9,18 +9,36 @@ import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.function.Consumer;
 
+/**
+ * Maneja la sesión TCP de un cliente conectado.
+ *
+ * <p>Implementa {@link Runnable} para ejecutarse en un hilo dedicado por cliente
+ * (patrón Thread-per-Connection). Cada instancia tiene su propio socket, por lo que
+ * múltiples clientes se atienden en paralelo sin compartir estado entre sí.
+ *
+ * <p>El ciclo de vida es: leer línea → parsear con {@link ProtocoloParser} →
+ * delegar al método ejecutarX() correspondiente → responder. El socket permanece
+ * abierto hasta que el cliente lo cierra, permitiendo múltiples comandos por sesión.
+ *
+ * <p>Las operaciones de escritura (CONTRATAR, FINALIZAR, CALIFICAR) pueden bloquearse
+ * mientras esperan locks o el semáforo de calificación — esto es intencional y
+ * forma parte de la demostración de concurrencia.
+ */
 public class ManejadorCliente implements Runnable {
 
     private final Socket socket;
     private final GrafoTrabajadores grafo;
     private final Object monitorExpiracion;
     private final Consumer<String> log;
+    private final MetricasServidor metricas;
 
-    public ManejadorCliente(Socket socket, GrafoTrabajadores grafo, Object monitorExpiracion, Consumer<String> log) {
+    public ManejadorCliente(Socket socket, GrafoTrabajadores grafo, Object monitorExpiracion,
+                            Consumer<String> log, MetricasServidor metricas) {
         this.socket = socket;
         this.grafo = grafo;
         this.monitorExpiracion = monitorExpiracion;
         this.log = log;
+        this.metricas = metricas;
     }
 
     @Override
@@ -46,8 +64,10 @@ public class ManejadorCliente implements Runnable {
 
     private String procesar(String linea) {
         ProtocoloParser.Comando cmd = ProtocoloParser.parsear(linea);
+        long t0 = System.currentTimeMillis();
+        String resp;
         try {
-            return switch (cmd.getTipo()) {
+            resp = switch (cmd.getTipo()) {
                 case REGISTRAR -> ejecutarRegistrar(cmd);
                 case CONTRATAR -> ejecutarContratar(cmd);
                 case FINALIZAR -> ejecutarFinalizar(cmd);
@@ -61,8 +81,10 @@ public class ManejadorCliente implements Runnable {
                 default        -> "ERROR comando desconocido";
             };
         } catch (Exception e) {
-            return "ERROR " + e.getMessage();
+            resp = "ERROR " + e.getMessage();
         }
+        metricas.registrar(cmd.getTipo().name(), !resp.startsWith("ERROR"), System.currentTimeMillis() - t0);
+        return resp;
     }
 
     private String ejecutarRegistrar(ProtocoloParser.Comando cmd) {
